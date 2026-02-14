@@ -2,6 +2,10 @@ from backend.app.main import init_db
 from telegram.ext import ApplicationBuilder, CommandHandler
 from backend.app.core.config import TELEGRAM_BOT_TOKEN
 from backend.app.bots.telegram.commands import start, set_home
+from backend.app.bots.telegram.commands import anywhere
+
+application.add_handler(CommandHandler("anywhere", anywhere))
+
 
 
 def start_bot():

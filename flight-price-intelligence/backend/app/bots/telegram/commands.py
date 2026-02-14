@@ -5,6 +5,10 @@ from sqlalchemy.orm import Session
 from backend.app.db.session import SessionLocal
 from backend.app.models.user import User
 
+from backend.app.services.anywhere_scanner import scan_anywhere
+from backend.app.db.session import SessionLocal
+from backend.app.models.user import User
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_user.id)
@@ -44,3 +48,46 @@ async def set_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"✅ Home airport set to {home_airport}"
         )
+
+
+async def anywhere(update, context):
+    telegram_id = str(update.effective_user.id)
+    db = SessionLocal()
+
+    user = (
+        db.query(User)
+        .filter(User.telegram_id == telegram_id)
+        .first()
+    )
+
+    if not user or not user.home_airport:
+        await update.message.reply_text(
+            "❗ Please set your home airport first."
+        )
+        return
+
+    await update.message.reply_text(
+        f"🔍 Searching cheap flights from {user.home_airport} to anywhere..."
+    )
+
+    deals = scan_anywhere(
+        db=db,
+        origin=user.home_airport,
+        threshold=user.discount_threshold,
+    )
+
+    if not deals:
+        await update.message.reply_text(
+            "😕 No insane deals found right now. Try later!"
+        )
+        return
+
+    message = "🔥 TOP DEALS\n\n"
+
+    for d in deals[:5]:
+        message += (
+            f"✈️ {user.home_airport} → {d['destination']}\n"
+            f"💰 ₹{d['price']} (↓ {d['discount']}%)\n\n"
+        )
+
+    await update.message.reply_text(message)
