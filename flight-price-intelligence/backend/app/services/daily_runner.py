@@ -14,6 +14,7 @@ from backend.app.services.alert_dispatcher import send_telegram_alert
 from backend.app.services.price_collector import collect_price
 from backend.app.services.price_intelligence import get_price_baseline
 from backend.app.services.confidence import calculate_confidence
+from backend.app.services.deal_explainer import explain_deal
 
 
 def run_daily_scan():
@@ -73,7 +74,7 @@ def run_daily_scan():
 
         current_price = offer["price"]
 
-        # Store today's price to build historical intelligence
+        # Store today's price (build historical intelligence)
         collect_price(
             db=db,
             route_id=route.id,
@@ -109,6 +110,15 @@ def run_daily_scan():
             sample_size=sample_size,
         )
 
+        # Generate human-readable explanation
+        explanation = explain_deal(
+            current_price=current_price,
+            historical_avg=historical_avg,
+            recent_median=recent_median,
+            discount_percent=discount,
+            sample_size=sample_size,
+        )
+
         # Alert message
         message = (
             "🔥 INSANE FLIGHT DEAL\n\n"
@@ -116,6 +126,7 @@ def run_daily_scan():
             f"💰 ₹{current_price} (↓ {discount}%)\n"
             f"📉 Avg price: ₹{round(historical_avg)}\n"
             f"🧠 Confidence: {confidence_label}\n\n"
+            f"💡 Why this is a deal:\n{explanation}\n\n"
             "⏳ Likely to disappear soon"
         )
 
