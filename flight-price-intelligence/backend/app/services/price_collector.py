@@ -1,37 +1,37 @@
-import random
-from datetime import date, timedelta
+from datetime import date
 from sqlalchemy.orm import Session
 
 from backend.app.models.price_snapshot import PriceSnapshot
-from backend.app.models.route import Route
+from backend.app.services.flight_api.client import AmadeusClient
 
 
-def collect_prices_for_route(
+def collect_price(
     db: Session,
-    route: Route,
-    days_ahead: int = 30
+    route_id: int,
+    origin: str,
+    destination: str,
 ):
-    """
-    Stub price collector.
-    Replace internals with real API later.
-    """
+    amadeus = AmadeusClient()
 
-    today = date.today()
+    offer = amadeus.get_cheapest_offer(
+        origin=origin,
+        destination=destination,
+        departure_date=date.today().isoformat(),
+    )
 
-    for i in range(1, days_ahead + 1):
-        departure_date = today + timedelta(days=i)
+    if not offer:
+        return None
 
-        fake_price = random.randint(3000, 12000)
+    snapshot = PriceSnapshot(
+        route_id=route_id,
+        departure_date=date.today(),
+        price=offer["price"],
+        currency=offer["currency"],
+        airline=offer["airline"],
+        stops=offer["stops"],
+    )
 
-        snapshot = PriceSnapshot(
-            route_id=route.id,
-            departure_date=departure_date,
-            price=fake_price,
-            currency="INR",
-            airline="FAKEAIR",
-            stops=random.choice([0, 1])
-        )
-
-        db.add(snapshot)
-
+    db.add(snapshot)
     db.commit()
+
+    return snapshot

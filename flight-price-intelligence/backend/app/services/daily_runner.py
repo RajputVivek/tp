@@ -4,6 +4,7 @@ from backend.app.main import init_db
 from backend.app.db.session import SessionLocal
 from backend.app.models.user import User
 from backend.app.models.route import Route
+from backend.app.services.flight_api.client import AmadeusClient
 from backend.app.services.deal_detector import (
     is_valid_deal,
     calculate_discount,
@@ -18,16 +19,20 @@ def run_daily_scan():
     db = SessionLocal()
 
     users = db.query(User).filter(User.alerts_enabled == True).all()
-
     if not users:
         print("ℹ️ No active users found")
+        return
+
+    try:
+        amadeus = AmadeusClient()
+    except RuntimeError as e:
+        print(f"❌ {e}")
         return
 
     for user in users:
         if not user.home_airport:
             continue
 
-        # MVP: single destination (will expand later)
         destination = "BKK"
 
         route = (
@@ -48,11 +53,20 @@ def run_daily_scan():
             db.add(route)
             db.commit()
 
-        # --- FAKE DATA FOR NOW (will replace with real API) ---
-        current_price = 18000
-        historical_avg = 45000
-        recent_median = 42000
-        # -----------------------------------------------------
+        offer = amadeus.get_cheapest_offer(
+            origin=user.home_airport,
+            destination=destination,
+            departure_date=date.today().isoformat(),
+        )
+
+        if not offer:
+            continue
+
+        current_price = offer["price"]
+
+        # Temporary heuristics
+        historical_avg = current_price * 1.6
+        recent_median = current_price * 1.4
 
         if not is_valid_deal(
             current_price=current_price,

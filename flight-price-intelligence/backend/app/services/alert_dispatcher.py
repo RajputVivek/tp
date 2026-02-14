@@ -19,18 +19,14 @@ def send_telegram_alert(
     price: float,
     discount_percent: float,
     telegram_id: str,
-    message: str
+    message: str,
 ):
-    """
-    Sends alert only if it was not sent before.
-    """
-
     existing = (
         db.query(Alert)
         .filter(
             Alert.user_id == user_id,
             Alert.route_id == route_id,
-            Alert.departure_date == departure_date
+            Alert.departure_date == departure_date,
         )
         .first()
     )
@@ -46,7 +42,7 @@ def send_telegram_alert(
         route_id=route_id,
         departure_date=departure_date,
         price=price,
-        discount_percent=discount_percent
+        discount_percent=discount_percent,
     )
 
     db.add(alert)
