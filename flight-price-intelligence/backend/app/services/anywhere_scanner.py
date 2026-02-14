@@ -1,12 +1,24 @@
 from datetime import date
+
 from backend.app.services.flight_api.client import AmadeusClient
-from backend.app.services.price_intelligence import get_price_baseline
 from backend.app.services.price_collector import collect_price
+from backend.app.services.price_intelligence import get_price_baseline
 from backend.app.services.deal_detector import is_valid_deal, calculate_discount
+from backend.app.services.confidence import calculate_confidence
 from backend.app.data.anywhere_destinations import POPULAR_DESTINATIONS
+from backend.app.models.route import Route
 
 
-def scan_anywhere(db, origin, threshold):
+def scan_anywhere(
+    db,
+    origin: str,
+    threshold: int,
+):
+    """
+    Scan popular destinations from origin and return
+    confidence-sorted deal results.
+    """
+
     amadeus = AmadeusClient()
     results = []
 
@@ -24,8 +36,6 @@ def scan_anywhere(db, origin, threshold):
             continue
 
         # Ensure route exists
-        from backend.app.models.route import Route
-
         route = (
             db.query(Route)
             .filter(
@@ -44,7 +54,9 @@ def scan_anywhere(db, origin, threshold):
             db.add(route)
             db.commit()
 
-        # Store price
+        current_price = offer["price"]
+
+        # Store today's price (build history)
         collect_price(
             db=db,
             route_id=route.id,
@@ -52,17 +64,16 @@ def scan_anywhere(db, origin, threshold):
             destination=destination,
         )
 
-        # Get historical baseline
-        historical_avg, recent_median = get_price_baseline(
+        # Get historical intelligence
+        historical_avg, recent_median, sample_size = get_price_baseline(
             db=db,
             route_id=route.id,
         )
 
-        if not historical_avg or not recent_median:
+        if historical_avg is None or recent_median is None:
             continue
 
-        current_price = offer["price"]
-
+        # Deal validation
         if not is_valid_deal(
             current_price=current_price,
             historical_avg=historical_avg,
@@ -73,11 +84,24 @@ def scan_anywhere(db, origin, threshold):
 
         discount = calculate_discount(current_price, historical_avg)
 
+        confidence_label, confidence_score = calculate_confidence(
+            discount_percent=discount,
+            sample_size=sample_size,
+        )
+
         results.append({
             "destination": destination,
             "price": current_price,
             "discount": discount,
+            "confidence_label": confidence_label,
+            "confidence_score": confidence_score,
+            "sample_size": sample_size,
         })
 
-    # Sort best deals first
-    return sorted(results, key=lambda x: x["discount"], reverse=True)
+    # Sort by confidence first, then discount
+    results.sort(
+        key=lambda r: (r["confidence_score"], r["discount"]),
+        reverse=True,
+    )
+
+    return results
