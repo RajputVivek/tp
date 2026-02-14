@@ -1,12 +1,14 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import func
 from datetime import date, timedelta
+from sqlalchemy.orm import Session
 
 from backend.app.models.price_snapshot import PriceSnapshot
 
 
-MIN_SAMPLE_SIZE = 7          # minimum data points required
-LOOKBACK_DAYS = 30           # rolling window
+# Minimum data required before judging a deal
+MIN_SAMPLE_SIZE = 7
+
+# Rolling window for intelligence (days)
+LOOKBACK_DAYS = 30
 
 
 def get_price_baseline(
@@ -14,13 +16,16 @@ def get_price_baseline(
     route_id: int,
 ):
     """
-    Returns (historical_avg, recent_median) if enough data exists,
-    otherwise returns (None, None).
+    Returns:
+        (historical_avg, recent_median, sample_size)
+
+    If not enough data exists:
+        (None, None, 0)
     """
 
     cutoff_date = date.today() - timedelta(days=LOOKBACK_DAYS)
 
-    prices = (
+    snapshots = (
         db.query(PriceSnapshot.price)
         .filter(
             PriceSnapshot.route_id == route_id,
@@ -29,17 +34,26 @@ def get_price_baseline(
         .all()
     )
 
-    if len(prices) < MIN_SAMPLE_SIZE:
+    # Flatten [(price,), (price,)] → [price, price]
+    prices = [row[0] for row in snapshots]
+
+    sample_size = len(prices)
+
+    # Not enough data yet → learn first
+    if sample_size < MIN_SAMPLE_SIZE:
         return None, None, 0
 
-    values = sorted(p[0] for p in prices)
+    # Sort for median calculation
+    prices.sort()
 
-    avg_price = sum(values) / len(values)
+    # Average
+    historical_avg = sum(prices) / sample_size
 
-    mid = len(values) // 2
-    if len(values) % 2 == 0:
-        median_price = (values[mid - 1] + values[mid]) / 2
+    # Median
+    mid = sample_size // 2
+    if sample_size % 2 == 0:
+        recent_median = (prices[mid - 1] + prices[mid]) / 2
     else:
-        median_price = values[mid]
+        recent_median = prices[mid]
 
-    return avg_price, median_price, len(values)
+    return historical_avg, recent_median, sample_size
