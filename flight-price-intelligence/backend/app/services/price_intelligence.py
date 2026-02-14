@@ -30,7 +30,7 @@ def get_price_baseline(
     )
 
     if len(prices) < MIN_SAMPLE_SIZE:
-        return None, None
+        return None, None, 0
 
     values = sorted(p[0] for p in prices)
 
@@ -42,4 +42,4 @@ def get_price_baseline(
     else:
         median_price = values[mid]
 
-    return avg_price, median_price
+    return avg_price, median_price, len(values)

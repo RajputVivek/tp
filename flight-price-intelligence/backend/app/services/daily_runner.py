@@ -13,6 +13,7 @@ from backend.app.services.deal_detector import (
 from backend.app.services.alert_dispatcher import send_telegram_alert
 from backend.app.services.price_collector import collect_price
 from backend.app.services.price_intelligence import get_price_baseline
+from backend.app.services.confidence import calculate_confidence
 
 
 def run_daily_scan():
@@ -38,7 +39,7 @@ def run_daily_scan():
         if not user.home_airport:
             continue
 
-        # MVP: single destination
+        # MVP destination (can expand later)
         destination = "BKK"
 
         # Get or create route
@@ -72,7 +73,7 @@ def run_daily_scan():
 
         current_price = offer["price"]
 
-        # Store today's price (build historical dataset)
+        # Store today's price to build historical intelligence
         collect_price(
             db=db,
             route_id=route.id,
@@ -80,18 +81,18 @@ def run_daily_scan():
             destination=destination,
         )
 
-        # Compute historical baselines
-        historical_avg, recent_median = get_price_baseline(
+        # Get historical baselines + sample size
+        historical_avg, recent_median, sample_size = get_price_baseline(
             db=db,
             route_id=route.id,
         )
 
-        # Not enough data yet → learn first, judge later
+        # Not enough data yet → learn first
         if historical_avg is None or recent_median is None:
             print("ℹ️ Not enough historical data yet")
             continue
 
-        # Deal detection
+        # Check if this is a valid deal
         if not is_valid_deal(
             current_price=current_price,
             historical_avg=historical_avg,
@@ -102,11 +103,19 @@ def run_daily_scan():
 
         discount = calculate_discount(current_price, historical_avg)
 
+        # Calculate confidence
+        confidence_label, confidence_score = calculate_confidence(
+            discount_percent=discount,
+            sample_size=sample_size,
+        )
+
+        # Alert message
         message = (
             "🔥 INSANE FLIGHT DEAL\n\n"
             f"✈️ {route.origin_airport} → {route.destination_airport}\n"
             f"💰 ₹{current_price} (↓ {discount}%)\n"
-            f"📉 Avg price: ₹{round(historical_avg)}\n\n"
+            f"📉 Avg price: ₹{round(historical_avg)}\n"
+            f"🧠 Confidence: {confidence_label}\n\n"
             "⏳ Likely to disappear soon"
         )
 
