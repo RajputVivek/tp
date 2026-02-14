@@ -5,15 +5,16 @@ from backend.app.services.daily_runner import run_daily_scan
 def start_scheduler():
     scheduler = BlockingScheduler()
 
-    # Run once per day at 9 AM
+    # Run every 4 hours
     scheduler.add_job(
         run_daily_scan,
-        trigger="cron",
-        hour=9,
-        minute=0,
+        trigger="interval",
+        hours=4,
+        max_instances=1,   # prevent overlapping runs
+        coalesce=True,     # if server was down, run once
     )
 
-    print("⏳ Scheduler started (daily scan at 09:00)")
+    print("⏳ Scheduler started (runs every 4 hours)")
     scheduler.start()
 
 
