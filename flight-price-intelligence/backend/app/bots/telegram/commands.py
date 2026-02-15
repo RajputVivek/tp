@@ -16,86 +16,44 @@ async def start(update, context):
     db = SessionLocal()
 
     user = db.query(User).filter(User.telegram_id == telegram_id).first()
-
     if not user:
-        user = User(
-            telegram_id=telegram_id,
-            alerts_enabled=True,
-        )
+        user = User(telegram_id=telegram_id, alerts_enabled=True)
         db.add(user)
         db.commit()
 
     await update.message.reply_text(
         "👋 Welcome to Flight Price Intelligence!\n\n"
-        "I track flight prices and alert you when they’re *insanely cheaper than usual*.\n\n"
         "Commands:\n"
-        "/anywhere – find cheap destinations\n"
+        "/anywhere – flexible destinations\n"
         "/today – today’s best deals\n"
         "/status – system status\n"
     )
 
 
-async def anywhere(update, context):
-    telegram_id = str(update.effective_user.id)
-    db = SessionLocal()
-
-    user = db.query(User).filter(User.telegram_id == telegram_id).first()
-
-    if not user or not user.home_airport:
-        await update.message.reply_text(
-            "❗ Please set your home airport first using /set_home"
-        )
-        return
-
-    await update.message.reply_text(
-        f"🔍 Searching cheap flights from {user.home_airport} to anywhere..."
-    )
-
-    loop = asyncio.get_running_loop()
-    deals = await loop.run_in_executor(
-        None,
-        partial(
-            scan_anywhere,
-            db,
-            user.home_airport,
-            user.discount_threshold,
-        ),
-    )
-
-    if not deals:
-        await update.message.reply_text(
-            "😕 No strong deals right now. Try again later!"
-        )
-        return
-
-    message = "🔥 TOP DEALS (FLEXIBLE DATES)\n\n"
-
-    for d in deals[:3]:
-        message += (
-            f"✈️ {user.home_airport} → {d['destination']}\n"
-            f"💰 ₹{d['price']} (↓ {d['discount']}%)\n"
-            f"🧠 Confidence: {d['confidence_label']}\n\n"
-        )
-
-    await update.message.reply_text(message)
-
-
 async def today(update, context):
     telegram_id = str(update.effective_user.id)
     db = SessionLocal()
-
     user = db.query(User).filter(User.telegram_id == telegram_id).first()
 
     if not user or not user.home_airport:
         await update.message.reply_text(
-            "❗ Please set your home airport first using /set_home"
+            "❗ Please set your home airport using /set_home"
         )
         return
 
-    # ✅ Immediate response (important)
     await update.message.reply_text(
         "📅 Finding today’s best flight deals...\n⏳ Please wait a few seconds."
     )
+
+    # 🔥 DETACH heavy work from handler
+    context.application.create_task(
+        _run_today_scan(context, telegram_id)
+    )
+
+
+async def _run_today_scan(context, telegram_id: str):
+    db = SessionLocal()
+    user = db.query(User).filter(User.telegram_id == telegram_id).first()
 
     destinations = ["BKK", "SIN", "DXB"]
     loop = asyncio.get_running_loop()
@@ -117,13 +75,13 @@ async def today(update, context):
             results.append(result)
 
     if not results:
-        await update.message.reply_text(
-            "😕 No strong flight deals today.\nTry again tomorrow."
+        await context.bot.send_message(
+            chat_id=telegram_id,
+            text="😕 No strong flight deals today.\nTry again tomorrow.",
         )
         return
 
     message = "📅 *Best Flight Deals Today*\n\n"
-
     for r in results[:3]:
         message += (
             f"✈️ {user.home_airport} → {r['destination']}\n"
@@ -132,37 +90,29 @@ async def today(update, context):
             f"📆 Best date: {r['departure_date']}\n\n"
         )
 
-    await update.message.reply_text(message, parse_mode="Markdown")
+    await context.bot.send_message(
+        chat_id=telegram_id,
+        text=message,
+        parse_mode="Markdown",
+    )
 
 
 async def status(update, context):
     telegram_id = str(update.effective_user.id)
     db = SessionLocal()
-
     user = db.query(User).filter(User.telegram_id == telegram_id).first()
 
-    if not user:
-        await update.message.reply_text(
-            "❗ User not found. Please send /start first."
-        )
-        return
-
-    routes_count = (
-        db.query(Route)
-        .filter(Route.origin_airport == user.home_airport)
-        .count()
-    )
-
-    price_points = db.query(PriceSnapshot).count()
-    alerts_sent = db.query(Alert).filter(Alert.user_id == user.id).count()
+    routes = db.query(Route).count()
+    prices = db.query(PriceSnapshot).count()
+    alerts = db.query(Alert).count()
 
     await update.message.reply_text(
         "📊 *Flight Intelligence Status*\n\n"
         f"👤 Home airport: {user.home_airport or 'Not set'}\n"
-        f"🛣 Routes tracked: {routes_count}\n"
-        f"📈 Price points collected: {price_points}\n"
-        f"🚨 Alerts sent: {alerts_sent}\n\n"
-        "🧠 Confidence engine: Active\n"
-        "⏱ Scans run automatically every 4 hours",
+        f"🛣 Routes tracked: {routes}\n"
+        f"📈 Price points collected: {prices}\n"
+        f"🚨 Alerts sent: {alerts}\n\n"
+        "🧠 Engine: Active\n"
+        "⏱ Scan: Every 4 hours",
         parse_mode="Markdown",
     )
