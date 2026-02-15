@@ -1,68 +1,44 @@
-from telegram import Update
-from telegram.ext import ContextTypes
-from sqlalchemy.orm import Session
-
 from backend.app.db.session import SessionLocal
 from backend.app.models.user import User
+from backend.app.models.route import Route
+from backend.app.models.price_snapshot import PriceSnapshot
+from backend.app.models.alert import Alert
 
 from backend.app.services.anywhere_scanner import scan_anywhere
-from backend.app.db.session import SessionLocal
-from backend.app.models.user import User
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update, context):
     telegram_id = str(update.effective_user.id)
-
-    db: Session = SessionLocal()
+    db = SessionLocal()
 
     user = db.query(User).filter(User.telegram_id == telegram_id).first()
 
     if not user:
-        user = User(telegram_id=telegram_id)
+        user = User(
+            telegram_id=telegram_id,
+            alerts_enabled=True,
+        )
         db.add(user)
         db.commit()
 
     await update.message.reply_text(
-        "✈️ Welcome!\n\n"
-        "I’ll alert you when flights get unusually cheap.\n\n"
-        "Set your home airport using:\n"
-        "/set_home DEL"
+        "👋 Welcome to Flight Price Intelligence!\n\n"
+        "I’ll alert you when flights are *insanely cheaper than usual*.\n\n"
+        "Commands:\n"
+        "/anywhere – find cheap destinations\n"
+        "/status – system status\n"
     )
-
-
-async def set_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /set_home DEL")
-        return
-
-    home_airport = context.args[0].upper()
-    telegram_id = str(update.effective_user.id)
-
-    db: Session = SessionLocal()
-    user = db.query(User).filter(User.telegram_id == telegram_id).first()
-
-    if user:
-        user.home_airport = home_airport
-        db.commit()
-
-        await update.message.reply_text(
-            f"✅ Home airport set to {home_airport}"
-        )
 
 
 async def anywhere(update, context):
     telegram_id = str(update.effective_user.id)
     db = SessionLocal()
 
-    user = (
-        db.query(User)
-        .filter(User.telegram_id == telegram_id)
-        .first()
-    )
+    user = db.query(User).filter(User.telegram_id == telegram_id).first()
 
     if not user or not user.home_airport:
         await update.message.reply_text(
-            "❗ Please set your home airport first."
+            "❗ Please set your home airport first using /set_home"
         )
         return
 
@@ -78,16 +54,50 @@ async def anywhere(update, context):
 
     if not deals:
         await update.message.reply_text(
-            "😕 No insane deals found right now. Try later!"
+            "😕 No strong deals right now. Try again later!"
         )
         return
 
-    message = "🔥 TOP DEALS\n\n"
+    message = "🔥 TOP DEALS (FLEXIBLE DATES)\n\n"
 
-    for d in deals[:5]:
+    for d in deals[:3]:
         message += (
             f"✈️ {user.home_airport} → {d['destination']}\n"
-            f"💰 ₹{d['price']} (↓ {d['discount']}%)\n\n"
+            f"💰 ₹{d['price']} (↓ {d['discount']}%)\n"
+            f"🧠 Confidence: {d['confidence_label']}\n\n"
         )
 
     await update.message.reply_text(message)
+
+
+async def status(update, context):
+    telegram_id = str(update.effective_user.id)
+    db = SessionLocal()
+
+    user = db.query(User).filter(User.telegram_id == telegram_id).first()
+
+    if not user:
+        await update.message.reply_text(
+            "❗ User not found. Please send /start first."
+        )
+        return
+
+    routes_count = (
+        db.query(Route)
+        .filter(Route.origin_airport == user.home_airport)
+        .count()
+    )
+
+    price_points = db.query(PriceSnapshot).count()
+    alerts_sent = db.query(Alert).filter(Alert.user_id == user.id).count()
+
+    await update.message.reply_text(
+        "📊 *Flight Intelligence Status*\n\n"
+        f"👤 Home airport: {user.home_airport or 'Not set'}\n"
+        f"🛣 Routes tracked: {routes_count}\n"
+        f"📈 Price points collected: {price_points}\n"
+        f"🚨 Alerts sent: {alerts_sent}\n\n"
+        "🧠 Confidence engine: Active\n"
+        "⏱ Scans run automatically every 4 hours",
+        parse_mode="Markdown",
+    )
