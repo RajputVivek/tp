@@ -5,6 +5,7 @@ from backend.app.models.price_snapshot import PriceSnapshot
 from backend.app.models.alert import Alert
 
 from backend.app.services.anywhere_scanner import scan_anywhere
+from backend.app.services.date_agnostic_scanner import scan_best_date
 
 
 async def start(update, context):
@@ -23,9 +24,10 @@ async def start(update, context):
 
     await update.message.reply_text(
         "👋 Welcome to Flight Price Intelligence!\n\n"
-        "I’ll alert you when flights are *insanely cheaper than usual*.\n\n"
+        "I track flight prices and alert you when they’re *insanely cheaper than usual*.\n\n"
         "Commands:\n"
         "/anywhere – find cheap destinations\n"
+        "/today – today’s best deals\n"
         "/status – system status\n"
     )
 
@@ -68,6 +70,51 @@ async def anywhere(update, context):
         )
 
     await update.message.reply_text(message)
+
+
+async def today(update, context):
+    telegram_id = str(update.effective_user.id)
+    db = SessionLocal()
+
+    user = db.query(User).filter(User.telegram_id == telegram_id).first()
+
+    if not user or not user.home_airport:
+        await update.message.reply_text(
+            "❗ Please set your home airport first using /set_home"
+        )
+        return
+
+    destinations = ["BKK", "SIN", "DXB"]
+
+    results = []
+
+    for dest in destinations:
+        result = scan_best_date(
+            db=db,
+            origin=user.home_airport,
+            destination=dest,
+            threshold=user.discount_threshold,
+        )
+        if result:
+            results.append(result)
+
+    if not results:
+        await update.message.reply_text(
+            "😕 No strong flight deals today.\nTry again tomorrow."
+        )
+        return
+
+    message = "📅 *Best Flight Deals Today*\n\n"
+
+    for r in results[:3]:
+        message += (
+            f"✈️ {user.home_airport} → {r['destination']}\n"
+            f"💰 ₹{r['price']} (↓ {r['discount']}%)\n"
+            f"🧠 {r['confidence_label']} confidence\n"
+            f"📆 Best date: {r['departure_date']}\n\n"
+        )
+
+    await update.message.reply_text(message, parse_mode="Markdown")
 
 
 async def status(update, context):

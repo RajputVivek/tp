@@ -1,12 +1,10 @@
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-)
+from telegram.ext import ApplicationBuilder, CommandHandler
 
 from backend.app.core.config import TELEGRAM_BOT_TOKEN
 from backend.app.bots.telegram.commands import (
     start,
     anywhere,
+    today,
     status,
 )
 
@@ -16,6 +14,7 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("anywhere", anywhere))
+    application.add_handler(CommandHandler("today", today))
     application.add_handler(CommandHandler("status", status))
 
     print("🤖 Telegram bot started")
