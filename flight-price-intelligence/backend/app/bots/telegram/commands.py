@@ -1,3 +1,6 @@
+import asyncio
+from functools import partial
+
 from backend.app.db.session import SessionLocal
 from backend.app.models.user import User
 from backend.app.models.route import Route
@@ -48,10 +51,15 @@ async def anywhere(update, context):
         f"🔍 Searching cheap flights from {user.home_airport} to anywhere..."
     )
 
-    deals = scan_anywhere(
-        db=db,
-        origin=user.home_airport,
-        threshold=user.discount_threshold,
+    loop = asyncio.get_running_loop()
+    deals = await loop.run_in_executor(
+        None,
+        partial(
+            scan_anywhere,
+            db,
+            user.home_airport,
+            user.discount_threshold,
+        ),
     )
 
     if not deals:
@@ -84,16 +92,26 @@ async def today(update, context):
         )
         return
 
+    # ✅ Immediate response (important)
+    await update.message.reply_text(
+        "📅 Finding today’s best flight deals...\n⏳ Please wait a few seconds."
+    )
+
     destinations = ["BKK", "SIN", "DXB"]
+    loop = asyncio.get_running_loop()
 
     results = []
 
     for dest in destinations:
-        result = scan_best_date(
-            db=db,
-            origin=user.home_airport,
-            destination=dest,
-            threshold=user.discount_threshold,
+        result = await loop.run_in_executor(
+            None,
+            partial(
+                scan_best_date,
+                db,
+                user.home_airport,
+                dest,
+                user.discount_threshold,
+            ),
         )
         if result:
             results.append(result)
