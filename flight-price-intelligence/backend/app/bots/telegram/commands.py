@@ -32,23 +32,17 @@ async def start(update, context):
 
 async def today(update, context):
     telegram_id = str(update.effective_user.id)
-    db = SessionLocal()
-    user = db.query(User).filter(User.telegram_id == telegram_id).first()
 
-    if not user or not user.home_airport:
-        await update.message.reply_text(
-            "❗ Please set your home airport using /set_home"
-        )
-        return
-
+    # ✅ Reply immediately — ZERO blocking before this
     await update.message.reply_text(
         "📅 Finding today’s best flight deals...\n⏳ Please wait a few seconds."
     )
 
-    # 🔥 DETACH heavy work from handler
+    # 🔥 Background job — no awaiting
     context.application.create_task(
         _run_today_scan(context, telegram_id)
     )
+
 
 
 async def _run_today_scan(context, telegram_id: str):
